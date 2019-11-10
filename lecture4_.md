@@ -56,7 +56,7 @@ Timer interrupt frequency = tick rate
 - Tick rate는 HZ 매크로에 의해 정의된다.
 
   - i386에서는 #define HZ 1000 으로 정의됨
-  - Timer interrupt frequenc를 증가시키는 것은 timer interrupt를 더 자주 발생시킨다는 것을 의미
+  - Timer interrupt frequency를 증가시키는 것은 timer interrupt를 더 자주 발생시킨다는 것을 의미
   
 - Timer interrupt frequency(=tick rate)를 증가시키는 경우
 
@@ -95,13 +95,64 @@ Timer interrupt frequency = tick rate
 
 ### 1. Hardware Clock Devices
 
+#### Real Time Clock(RTC)
 
+- PC가 꺼져 있어도 계속 시간을 트래킹한다(tick이 계속됨)
+  - 마더보드의 배터리에 의해 전원이 유지되기 때문!
+  - Ex) Motolora MC146818P
+- IRQ8에서는 2Hz~8192Hz로 주기적으로 인터럽트가 발생하거나, RTC가 특정 값에 도달하면 인터럽트가 발생하도록 프로그래밍됨(알람시계처럼!)
+- <u>Linux는 부팅하는 동안에만 RTC를 사용하여 시간과 날짜를 받아온다.</u>
+  - 부팅하는 동안 커널은 RTC를 읽어와 wall clock time을 초기화됨
+  - Wall clock time은 xtime 변수에 의해 유지됨
+  - /dev/rtc 디바이스 파일에 의해 RTC를 프로그래밍함
+  - /sbin/clock 프로그램에 의해 clock을 세팅함
+
+#### Time Stamp Counter(TSC Register)
+
+- 매우 정밀한 시간 측정에 사용됨
+  - 시간 세분도(Granularity): CPU 사이클(Ex. 1GHz)
+- Ex) Intel x86: 64-bit TSC Register
+  - 하드웨어에 의해 업데이트됨(각 clock 신호마다 증가함)
+  - 모든 Intel CPU는 외부 오실레이터로부터 clock 신호를 받아오는 CLK 입력핀을 가지고 있음
+  - rdtsc 어셈블리어 명령어를 통해 읽어옴
+    - 400MHz(<u>4\*10^8</u>Hz)이면 TSC는 2.5ns(2.5\*10^(-9) = 1/<u>4*10^8</u>)마다 증가한다.
+- <u>Linux는 PIT의 시간 측정보다 훨씬 더 정확한 시간 측정을 얻기 위해 TSC의 장점을 활용!</u>
+
+#### Programmable Interval Timer(PIT)
+
+- 커널이 시간을 유지할 수 있게 함
+- <u>PIT는 timer interrupt라는 특수한 인터럽트를 발생시킴</u>
+  - <u>timer interrupt는 커널에게 한번 더 time interval이 경과했음을 알림</u>
+- Ex) legac Intel 8254 CMOS 칩
+- Linux는 PIT가 1000Hz 주파수로(1ms마다) IRQ0에 timer interrupt를 발생시키도록 프로그래밍한다.
+  - 커널 버전 2.6 이전에는 100Hz로 timer interrupt를 발생시켰음
+  - Linuz HZ 매크로: 초당 timer interrupt 발생 횟수 = Timer interrupt frequency
+    - IBM PC에서 HZ=1000
 
 ### 2. Kernel Data Structures and Functions to measure time
 
 #### Linux Timekeeping Architecture
 
-#### Timer Interrupt Handling
+- 시스템 부팅 중
+  - 커널은 wall clock time을 초기화하기 위해 RTC를 읽어온다.
+  - wall clock time은 xtime 변수에 의해 유지됨
+- PIT에 의해 Kernel timer interrupt가 발동됨
+  - Interrupt handler + bottom half (softirq)
+- 커널이 Timer interrupt handler에서 하는 일들
+  - jiffies_64 변수 값을 1 증가시킴
+  - xtime 변수에서의 wall clock time을 갱신
+  - 리소스 사용 통계 갱신
+    - 시스템 시간 또는 user mode 시간의 마지막 tick을 현재 프로세스에 book-keep???
+  - 만료된 dynamic timer를 실행하기 위해 softirq를 raise
+  - scheduler_tick() 실행
+    - 현재 프로세스의 time slice를 감소시키고, 필요한 경우 TIF_NEED_RESCHED 플래그를 set
+
+#### Timer Interrupt Handling(Uniprocessor)
+
+- arch/i386/kernel/time.c:**time_init()**
+- **timer_interrupt()**
+- kernel/timer.c:**do_timer()**
+- kernel/timer.c:**update_process_times()**
 
 #### Updating the Time and Date
 
@@ -121,13 +172,22 @@ Timer interrupt frequency = tick rate
 
 - 시간 및 날짜 읽기 및 수정
   - **gettimeofday()**
+    - timeval 이라는 자료구조를 반환
+      - 1970.1.1 부터 현재까지 지난 초의 값과 마지막 초로부터 지난 microsecond의 값
+        - Ex) 12345.6789초가 지났으면 12345와 678900을 반환하는듯?
   - **settimeofday()**
+    - 현재 날짜와 시간을 수정
+    - root 권한만 가능!!!!
   - **adjtimex()**
+    - xtime을 사용하여 시계를 조율(keep the clock tuned)
+    - NTP(네트워크 시간 프로토콜)와 같은 시간 동기화 프로토콜을 실행하도록 구성됨
 - 유저 모드에 '인터벌 타이머' 제공
   - 프로세스에 <u>주기적으로</u> UNIX 신호 전송(periodic) 또는 특정 딜레이 이후 <u>하나의</u> 신호 전송(single-shot)
   - POSIX settime(), alarm() system call을 통해 활성화됨
   - **setitimer()**
     - Interval timer의 값을 설정
-      - Interval timer의 종류: ITIMER_REAL ,ITIMER_VIRTUAL, ITIMER_PROF
+      - Interval timer의 종류(3종류): ITIMER_REAL ,ITIMER_VIRTUAL, ITIMER_PROF
+    - ITIMER_REAL은 dynamic timer를 사용하여 구현한다.
+      - 어느 타이머가 끝나면 SIGALRM 신호를 프로세스로 전달하고, 타이머는 잠재적으로 재시작됨
   - **alarm()**
-    - 특정 시간 간격이 경과했을 때 호출 프로세스에 SIGALRM 신호를 보냄
+    - 특정 시간 간격이 경과했을 때(특정 타이머에서 지정한 시간이 다 끝났을 때) 호출할 프로세스에 SIGALRM 신호를 보냄
