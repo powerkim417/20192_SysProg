@@ -68,7 +68,69 @@
 
 ### Characteristics of Signals
 
+- Signal은 언제든 프로세스에 보내질 수 있다.
+- Signal이 실행되고 있지 않은 프로세스에 보내질 경우
+  - "Signal이 전송되었다는 것"을 해당 프로세스가 다시 실행될 때까지 커널에서 저장하고 있어야 한다!
+- Signal은 일반적으로 현재 실행중인 프로세스에 의해서만 처리된다.(current 프로세스)
+- 전송된 각 Signal은 2번 이상 수신할 수 없다.
+  - Signal을 프로세스에 저장하기 위해 bitmap 사용
+- Signal은 프로세스에 의해 선택적으로 block될 수 있다.
+  - 프로세스가 block을 해제하기 전까지는 signal을 수신하지 않음
+- 프로세스가 signal-handler function을 실행하면, 해당 handler가 종료될 때까지 signal을 block한다.
+  - signal handler는 또 다른 handled signal???이 발생해도 인터럽트될 수 없다. 
+
 ### Signal Handling
+
+- 각 task에는 다음과 같은 자료구조들이 유지되고 있음
+
+  - Signal handler의 배열(각 인덱스 당 하나의 signal type)
+  - Pending signal의 리스트
+  - Blocked signal의 mask
+
+- Pending signal
+
+  - Pending: Signal이 task에 보내졌지만 아직 처리되지 않은 경우
+  - Signal은 system call을 포함하는 interrupt 또는 exception으로부터 돌아왔을 때 처리된다.
+  - Pending list에는 type 당 1개의 signal만 가능.
+  - <u>Signal이 얼마나 오래 pending 상태로 남아있을 지 예측할 수 없음!</u>
+
+- Kernel에서의 Signal 구현
+
+  1. 각 프로세스에서 어떤 signal이 block되었는지 기억해야 함
+
+  2. Kernel → User mode로 전환할 때, 어떤 프로세스에 대한 signal이 도착했는지 확인(pending signal)
+
+     - 거의 모든 timer interrupt.. 즉 대략 1ms마다 발생
+
+     - ```assembly
+       # /arch/i365/kernel/entry.S
+       
+       ...
+       work_notifysig:
+       	...
+       	call do_notify_resume
+       	...
+       ...
+       ```
+
+     - ```c
+       // /arch/i386/kernel/signal.c
+       
+       void do_notify_resume(struct pt_regs *regs, sigset_t *oldset, __u32 thread_info_flags)
+       {
+       	...
+       	if (thread_info_flags & _TIF_SIGPENDING)
+       		do_signal(regs, oldset);
+       	...
+       }
+       ```
+
+  3. 이 signal을 무시해도 되는지 결정
+
+  4. Signal 처리
+
+     - 프로세스의 실행 기간동안 특정 지점에서 프로세스를 handler function으로 전환
+     - handler function이 끝나면 원래 실행중이던 context 복구
 
 #### Data structures for Signal Handling
 
@@ -76,9 +138,9 @@
 
 ### Signal Transmission
 
-### Signal Generation
+#### Signal Generation
 
-### Signal Action
+#### Signal Action
 
 ### Real-time Signals in Linux
 
