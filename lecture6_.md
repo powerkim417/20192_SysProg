@@ -32,6 +32,8 @@
 
 ### Signals in Linux/x86
 
+Table 11-1. Linux/i386의 첫 31개 signal
+
 |  #   |   Signal Name    | Default Action |              Comment               | POSIX |
 | :--: | :--------------: | :------------: | :--------------------------------: | :---: |
 |  1   |      SIGHUP      |   Terminate    |   터미널 또는 프로세스 제어 문제   |   O   |
@@ -66,6 +68,8 @@
 |  30  |      SIGPWR      |   Terminate    |          Powersupply 실패          |   X   |
 |  31  |    SIGUNUSED     |      Dump      |          (사용하지 않음)           |   X   |
 
+32~63번은 real-time signal
+
 ### Characteristics of Signals
 
 - Signal은 언제든 프로세스에 보내질 수 있다.
@@ -85,7 +89,7 @@
 
   - Signal handler의 배열(각 인덱스 당 하나의 signal type)
   - Pending signal의 리스트
-  - Blocked signal의 mask
+  - Blocked signal의 mask(SIGHUP, SIGINT 같은거?)
 
 - Pending signal
 
@@ -134,14 +138,188 @@
 
 #### Data structures for Signal Handling
 
+```c
+// /include/linux/sched.h
+
+struct task_struct {
+    ...
+    struct sigpending pending; // private pending signal의 리스트
+	struct signal_struct *signal; // 프로세스의 shared signal descriptor의 포인터
+	struct sighand_struct *sighand; // 프로세스의 signal handler descriptor의 포인터
+    sigset_t blocked; // block된 signal의 비트마스크
+    ...
+};
+
+struct sighand_struct {
+    ...
+    struct k_sigaction action[64];
+    /*
+    task->sighand->action[x].sa_handler 를 통해 signal handler 호출
+    */
+    ...
+};
+
+// /include/linux/signal.h
+
+struct sigpending { // 위의 task_struct에 존재
+    ...
+    struct list_head list; // 리스트의 첫번째 원소
+    sigset_t signal; // 리스트의 모든 signal의 비트마스크
+    /*
+    64비트 마스크(1~31은 Table 11-1에서, 32~63는 real-time signal)
+    */
+    ...
+};
+
+struct sigqueue {
+    ...
+    struct sigqueue *next; // 리스트에서 다음 element
+    siginfo_t info; // 이 pending signal에 대한 정보
+    ...
+};
+
+// /include/asm-i386/siginfo.h
+
+struct siginfo {
+    ...
+    int si_signo; // signal 번호
+    int si_code; // user, kernel, timer 중 누가 signal을 raise했는지
+    // 이 외에 각 signal type마다 필요한 정보들...
+    ...
+} siginfo_t;
+
+
+```
+
+- **struct task_struct** (/include/linux/sched.h)
+  - **struct sigpending** <u>pending</u>: private pending signal의 리스트
+    - struct list_head list: 리스트의 첫번째 원소
+    - sigset_t signal: 리스트의 모든 signal의 비트마스크
+    - 64비트 마스크(각 비트의 자리가 해당 signal을 의미)
+      - 1~31은 Table 11-1의 signal, 32~63은 real-time signal
+  - struct signal_struct *<u>signal</u>: 프로세스의 shared signal descriptor의 포인터
+  - **struct sighand_struct** *<u>sighand</u>: 프로세스의 signal handler descriptor의 포인터
+    - struct k_sigaction action[64]
+    - **task->sighand->action[x].sa_handler** 를 통해 signal handler 호출
+  - sigset_t <u>blocked</u>: block된 signal의 비트마스크
+- **struct sigqueue** (/include/linux/signal.h)
+  - struct sigqueue *next: 리스트에서 다음 element
+  - **struct siginfo_t** info: 이 pending signal에 대한 정보
+    - /include/asm-i386/siginfo.h
+    - int si_signo: signal 번호
+    - int si_code: user, kernel, timer 중 누가 signal을 raise했는지
+    - 이 외에 각 signal type마다 필요한 정보들...
+
+<img src="C:\Users\KJH\AppData\Roaming\Typora\typora-user-images\image-20191114144700032.png" alt="image-20191114144700032" style="zoom: 67%;" />
+
 #### Operations on Signal Data Structures
+
+커널에서 signal을 처리하기 위해 사용되는 함수와 매크로들
+
+- sigemptyset(set), sigfillset(set)
+- sigaddset(set, nsig), sigdelset(set, nsig)
+- sigaddsetmask(set, mask), sigdelsetmask(set, mask)
+- sigismember(set, nsig)
+- sigmask(nsig), sigtestsetmask(set, mask)
+- sigandsets(d, s1, s2), sigorsets(d, s1, s2), signandsets(d, s1, s2)
+- siginitset(set, mask), siginitsetinv(set, mask)
+- signal_pending(p)
+- recalc_sigpending_tsk(t), recalc_sigpending()
+- rm_from_queue(mask, q)
+- flush_sigqueue(q), flush_signals(t)
 
 ### Signal Transmission
 
+1. Signal 생성(Signal Generation)
+   - 커널은 새로운 signal이 전송되었음을 표현하기 위해 대상 프로세스의 descriptor를 업데이트한다. 
+2. Signal 전달(Signal Action)
+   - 커널은 대상 프로세스가 자신의 실행 상태를 변경하거나 특정 signal handler를 실행하거나 둘 다 하도록 강제함으로써 signal에 반응하도록 한다.
+
+1. 
+
 #### Signal Generation
+
+- Signal handling의 첫번째 단계
+
+  - 필요에 따라 process descriptor를 업데이트한다.
+    - 커널 또는 다른 프로세스에서 signal을 프로세스로 보낼 때, 커널은 관련 기능을 통해 해당 signal을 생성한다.
+  - signal의 종류와 프로세스의 상태에 따라 해당 함수들은 프로세스를 깨우고 강제로 signal을 받게 할 수도 있음
+
+- Signal generation
+
+  - 커널 또는 다른 프로세스에서 signal을 **특정 프로세스**에 보낼 때
+
+    - 아래 테이블의 커널 함수들에 의해 **"specific_send_sig_info()"**가 호출됨
+
+      ![image-20191115030106441](C:\Users\KJH\AppData\Roaming\Typora\typora-user-images\image-20191115030106441.png)
+
+  - 커널 또는 다른 프로세스에서 signal을 **전체 스레드 그룹**에 보낼 때
+
+    - 아래 테이블의 커널 함수들에 의해 **"group_send_sig_info()"**가 호출됨
+
+      ![image-20191115030221688](C:\Users\KJH\AppData\Roaming\Typora\typora-user-images\image-20191115030221688.png)
+
+- 코드 분석
+
+  - **specific_send_sig_info(int <u>sig</u>, struct siginfo *<u>info</u>, struct task_struct *<u>t</u>)**
+
+    - 매개변수
+      - sig: signal 번호
+      - info: 'real-time signal과 연관된 siginfo_t의 주소' 또는 '0'(유저 모드 프로세스에서 signal을 보낸 경우) 또는 '1'(커널에서 signal을 보낸 경우)
+      - t: 대상 프로세스의 descriptor를 가리키는 포인터
+    - 주요 기능
+      - signal을 무시해도 되는지 체크
+      - signal을 task에 전달: send_signal(sig, info, t, &t->pending) 호출
+      - signal이 block되지 않았다면 signal_wake_up(t)를 호출하여 프로세스에게 새로 보류중인 signal이 있는지 알려준다.
+      - 특별히 따로 처리하는 signal: SIGKILL, SIGCONT, SIGSTOP, SIGSTP, SIGTTIN, SIGTTOU
+
+  - 함수 **send_signal(sig, info, t, &t->pending)**
+
+    - "Signal을 task t의 pending list에 추가!"
+    - Slab cache에 새 리스트 요소를 위한 메모리 할당
+    - signal 정보를 채워서 리스트에 추가
+    - pending signal bitmask(pending->signal)를 업데이트
+
+  - 함수 **signal_wake_up(struct task_struct *t, int resume)**
+
+    - 프로세스에게 새로운 active signal이 있다는 것을 알림
+
+    ```c
+    void signal_wake_up(struct task_struct *t, int resume){
+    	unsigned int mask;
+    	
+    	set_tsk_thread_flag(t, TIF_SIGPENDING);
+    	mask = TASK_INTERRUPTIBLE; // 0x0001
+    	if (resume) mask |= TASK_STOPPED | TASK_TRACED;
+    	if (!wake_up_state(t, mask)) kick_process(t);
+    }
+    ```
 
 #### Signal Action
 
+asdf
+
 ### Real-time Signals in Linux
 
+- POSIX 표준에 의해 정의됨
+  - Signal number: 32 ~ 63
+  - 같은 종류의 real-time signal이 여러 개가 queue될 수 있음
+  - Linux kernel은 real-time signal을 사용하지 않지만, 몇가지 특정 system call을 통해 POSIX 표준을 완전히 지원함???
+- Linux가 지원하는 것은 진정한 의미의 real-time signal이 아니다!
+  - Linux에서의 "real-time signal"은 그저 <u>같은 종류의 signal을 pending signal list에 여러 개 허용하는 것</u> 뿐이다. 
+
 ### System Calls Related to Signal Handling
+
+- User mode에서 실행되는 프로그램
+  - 다양한 종류의 system call에 의해 signal을 주고 받도록 허용됨
+  - 예시
+    - kill(pid, sig) → sys_kill() → kill_something_info() → kill_proc_info() 또는 kill_pg_info()
+    - sigaction(sig, act, oact)
+    - sigpending()
+    - sigprocmask() → sys_sigprocmask(oset, set, how)
+    - sigsuspend()
+- Real-time signal을 위한 system call
+  - rt_sigaction(), rt_sigpending(), rt_sigprocmask(), rt_sigsuspend()
+  - rt_sigqueueinfo(), rt_sigtimedwait()
+
+<img src="C:\Users\KJH\AppData\Roaming\Typora\typora-user-images\image-20191115040614678.png" alt="image-20191115040614678" style="zoom: 50%;" />
