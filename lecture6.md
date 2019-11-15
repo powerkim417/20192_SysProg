@@ -297,7 +297,54 @@ struct siginfo {
 
 #### Signal Action
 
-asdf
+- 프로세스가 interrupt/exception으로부터 돌아올 때
+
+  - ret_from_intr()/syscallexit 은 user mode로 전환하기 전에 block되지 않은 pending signal이 있는지 확인(TIF_SIGPENDING 플래그)한다.
+
+  - 만약 TIF_SIGPENDING 플래그가 set 되어있다면 **do_signal()** 호출
+
+    - arch/i386/kernel/signal.c::do_signal(struct pt_regs *regs, sigset_t *oldset)
+
+    - 각 signal을 pending list로부터 deque한다. (block된 signal 제외)
+
+    - signal을 전달하는 동안 수행할 수 있는 <u>3가지</u> 작업
+
+      - Signal을 명시적으로 <u>무시</u>
+
+      - Signal과 관련된 <u>default action 실행</u>
+
+        - Terminate: 프로세스 종료(kill)
+        - Dump: 프로세스가 종료되고, 이 프로세스에 대한 execution context를 담고 있는 core file 생성
+        - Ignore: Signal 무시
+        - Stop: 프로세스 중지(TASK_STOPPED 상태)
+        - Continue: 만약 프로세스가 중지된 상태라면 이 프로세스를 TASK_RUNNING 상태로 만든다.
+
+      - Signal에 해당하는 <u>signal-handler function을 호출</u>하여 signal을 catch: **handle_signal()**
+
+        - user mode와 kernel mode 간 전환 시 스택의 전환이 매우 신중히 진행되어야 하므로 signal handler를 실행하는 것은 복잡한 작업이다!
+
+          <img src="C:\Users\KJH\AppData\Roaming\Typora\typora-user-images\image-20191116043419994.png" alt="image-20191116043419994" style="zoom: 33%;" />
+
+        - Linux 해결책
+
+          - <u>kernel mode stack에 저장된 hardware context를 현재 프로세스의 user mode stack에 복사한다.</u>
+          - 반대로, user mode stack은 signal handler가 종료될 때 sigreturn() system call이 자동으로 호출되어 hardware context를 다시 kernel mode stack로 복사하고, user mode stack의 원래 내용을 복구하는 식으로 수정된다.(위와 반대 작업)
+
+        - handle_signal()의 세부 기능
+
+          - 프레임 세팅
+
+          - signal flag 판별
+
+          - signal handler 시작
+
+          - signal handler 종료
+
+            <img src="C:\Users\KJH\AppData\Roaming\Typora\typora-user-images\image-20191116044226904.png" alt="image-20191116044226904"  />
+
+    - SIGKILL과 SIGSTOP signal은 명시적으로 무시되거나 block되거나 catch될 수 없고, 그들의 default action은 반드시 실행되어야 한다.
+
+    - do_signal() 함수는 block되지 않은 pending signal이 다 없어질 때까지 반복 실행된다.
 
 ### Real-time Signals in Linux
 
@@ -306,7 +353,7 @@ asdf
   - 같은 종류의 real-time signal이 여러 개가 queue될 수 있음
   - Linux kernel은 real-time signal을 사용하지 않지만, 몇가지 특정 system call을 통해 POSIX 표준을 완전히 지원함???
 - Linux가 지원하는 것은 진정한 의미의 real-time signal이 아니다!
-  - Linux에서의 "real-time signal"은 그저 <u>같은 종류의 signal을 pending signal list에 여러 개 허용하는 것</u> 뿐이다. 
+  - Linux에서의 "real-time signal"은 그저 <u>같은 종류의 signal을 pending signal list에 여러 개 허용하는 것</u> 뿐이다.
 
 ### System Calls Related to Signal Handling
 
