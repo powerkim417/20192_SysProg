@@ -27,3 +27,32 @@ Node, Zone, Page Frame으로 이루어짐
 #### Node
 
 #### Zone
+
+### Process Address Mapping: 요약
+
+## Kernel Memory Allocation(KMA) in Linux
+
+### Contiguous Page Frame Allocator
+
+#### Buddy System
+
+### Noncontiguous Page Frame Allocator
+
+### Memory Object Allocator
+
+#### Slab Allocator
+
+##### 구조
+
+##### Specific Caches
+
+##### General Caches
+
+##### /proc/slabinfo
+
+##### Allocating and Releasing
+
+##### Summary
+
+### Which Method?
+
