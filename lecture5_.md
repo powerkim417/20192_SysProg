@@ -18,8 +18,18 @@
 
 - API (Application Programming Interface)
   - 주어진 서비스를 얻는 방법을 지정하는 함수 정의
-  - Ex) POSIX API인 malloc(), calloc(), free()는 libc 안에서 brk() system call로 구현되어 있다.
-  - 
+    - Ex) POSIX API인 malloc(), calloc(), free()는 libc 안에서 brk() system call로 구현되어 있다.
+    - "POSIX-호환": 시스템이 애플리케이션에 적절한 API 집합을 제공하는 경우(기능이 어떻게 구현되었는지는 상관 없음)
+  - 프로그래머의 관점: '유저 모드 라이브러리'
+- System call
+  - 소프트웨어 인터럽트를 통해 커널에 전달되는 명시적인 request
+    - 커널 설계자의 관점: '커널 안에 속한다'
+  - 몇몇 system call은 1개 이상의 인자를 필요로 한다.
+  - 정상적으로 종료되었을 경우 0 또는 양수를 반환
+    - 실패할 경우 -1을 반환하고, 실패 오류와 관련된 오류 코드를 errno 변수에 저장
+      - -1를 반환하지 않았을 경우(정상적 종료) errno 값은 의미가 없음!
+  - 유저 공간의 libc 안에 wrapper 함수로써 구현되어 있음
+    - Ex) libc 안의 _syscall3()
 
 ### System Call Handling
 
