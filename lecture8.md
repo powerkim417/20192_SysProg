@@ -183,7 +183,7 @@
 
     <img src="C:\Users\KJH\AppData\Roaming\Typora\typora-user-images\image-20191128225538291.png" alt="image-20191128225538291" style="zoom: 50%;" />
 
-    1. Page Upper Directory와 Page Middle Directory를 제거(0으로 채움)
+    1. Linear address에서 Page Upper Directory와 Page Middle Directory에 비트를 할당하지 않음으로써 제거
        - 포인터에서 두 디렉토리의 위치는 변하지 않기 때문에 32,64비트 상관없이 같은 코드 사용 가능
     2. 커널에서는 두 디렉토리의 엔트리 갯수를 1개로 설정한다. 이 2개의 엔트리는 적절한 Page Global Directory의 엔트리로 매핑된다.
 
